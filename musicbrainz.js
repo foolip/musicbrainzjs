@@ -154,3 +154,15 @@ function getArtistById(id, inc, onload, onerror) {
     url += '?inc='+inc.join('+');
   request(url, onload, onerror);
 }
+
+if (window.test) { (function() {
+  var JAYID = 'a223958d-5c56-4b2c-a30a-87e357bc121b';
+
+  var t = async_test('getArtistById');
+  getArtistById(JAYID, null, function(artist) {
+    t.step(function() {
+      assert_equals(artist.sortName, 'Chou, Jay');
+    });
+    t.done();
+  });
+})();}
