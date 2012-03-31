@@ -166,6 +166,7 @@ getRecordingsByArtist('a223958d-5c56-4b2c-a30a-87e357bc121b', function(recording
 
 var JAYID = 'a223958d-5c56-4b2c-a30a-87e357bc121b';
 var EASONID = '86119d30-d930-4e65-a97a-e31e22388166';
+var MAYID = 'e73ed332-bbde-4d69-87a9-250627ae0e29';
 var NULLID = '00000000-0000-0000-0000-000000000000';
 var ONESID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 
@@ -186,12 +187,16 @@ function bytestouuid(bytes) {
   return uuid;
 }
 
-// convert a 36-byte UUID to a 24-byte base64 string
+/** Convert a 36-byte UUID to a 22-byte base64 string.
+ *
+ * The trailing '==' is not included since the number of bytes is
+ * known (16).
+ */
 function uuidtobase64(uuid) {
-  return btoa(uuidtobytes(uuid));
+  return btoa(uuidtobytes(uuid)).substr(0,22);
 }
 
-// convert a 24-byte base64 string to a 36-byte UUID
+// convert a 22-byte base64 string to a 36-byte UUID
 function base64touuid(base64) {
   return bytestouuid(atob(base64));
 }
@@ -215,38 +220,101 @@ function unicodetouuid(uni) {
 }
 
 // convert a 36-byte UUID to a size-16 array of octets [0,255]
-function uuidtoarray(uuid) {
+function uuidtooctets(uuid) {
   return uuid.match(/[0-9a-f]{2}/g).map(function(hex) { return parseInt(hex, 16); });
 }
 
-/** Convert numbers between arbitrary bases.
+// convert a 36-byte UUID to a size-32 array of quads [0,15]
+function uuidtoquads(uuid) {
+  return uuid.match(/[0-9a-f]/g).map(function(hex) { return parseInt(hex, 16); });
+}
+
+/** Encode an octet array as an array numbers of arbitrary base.
  *
- * @param number A number represented as an array of integers in the
- *               range [0, srcbase-1].
- * @param frombase The source base in the range [0, Inf].
- * @param tobase The destination base in the range [0, Inf].
- * @return A number represented as an array of integers in the
- *         range [0, dstbase-1].
+ * @param src An array of octets [0,255].
+ * @param base The encoding base [0, 65536].
+ * @return An array of numbers [0, base-1].
  */
-function baseconv(src, srcbase, dstbase) {
-  var dst = '';
+function enc(src, base) {
+  log('enc(['+src+'], '+base+')');
+  var dst = [];
   var acc = 0; // value accumulator
-  var range = 1; // range (max value) of acc
-  var i = 0;
+  log('acc = '+acc);
+  var range = 1; // max value of acc
+  log('range = '+range);
+  var i = 0; // index in src array
+  log('i = '+i);
   while (i < src.length) {
-    while (range < dstbase && i < src.length) {
-      acc = (acc << 8) + src[i++];
-      range = range << 8;
+    while (range < base && i < src.length) {
+      acc = (acc << 8) + src[i];
+      log('acc = '+acc);
+      range = (range << 8);
+      log('range = '+range);
+      i++;
+      log('i = '+i);
     }
-    dst.push(acc % dstbase);
-    acc = (acc / dstbase) << 0;
-    range = (range / dstbase) << 0;
+    log('end acc-loop');
+    while (range >= base) {
+      dst.push(acc % base);
+      log('push('+dst[dst.length-1]+')');
+      acc = (acc / base) << 0;
+      log('acc = '+acc);
+      range = (range / base) << 0;
+      log('range = '+range);
+    }
+    log('end push-loop');
   }
+  if (acc > 0) {
+    dst.push(acc);
+    log('push('+dst[dst.length-1]+')');
+  }
+  log('return ['+dst+']');
   return dst;
 }
 
-//log(baseconv([1, 0], 10, 3));
-//log('done');
+/** Decode an array of numbers of arbitrary base to an octet array.
+ *
+ * @param src An array of numbers [0, base-1].
+ * @param base The encoding base [0, 65536].
+ * @param length Number of octets to decode.
+ * @return An array of octets.
+ */
+function dec(src, base, length) {
+  log('dec(['+src+'], '+base+')');
+  var dst = [];
+  var acc = 0; // value accumulator
+  log('acc = '+acc);
+  var range = 1; // max value of acc
+  log('range = '+range);
+  var i = 0; // index in src array
+  log('i = '+i);
+  while (i < src.length) {
+    while (range < 256 && i < src.length) {
+      acc = base*acc + src[i];
+      log('acc = '+acc);
+      range *= base;
+      log('range = '+range);
+      i++;
+      log('i = '+i);
+    }
+    log('end acc-loop');
+    while (range >= 256) {
+      dst.push(acc & 0xff);
+      log('push('+dst[dst.length-1]+')');
+      acc = acc >> 8;
+      log('acc = '+acc);
+      range = range >> 8;
+      log('range = '+range);
+    }
+    log('end push-loop');
+  }
+  if (acc > 0) {
+    dst.push(acc);
+    log('push('+dst[dst.length-1]+')');
+  }
+  log('return ['+dst+']');
+  return dst;
+}
 
 // CJK 4E00-9FFF, 0x9FCC being the last used code point
 // 14.35 bits per code point => 128 bits in 9 chars?
@@ -254,65 +322,32 @@ function baseconv(src, srcbase, dstbase) {
 var CJK_LOW = 0x4E00;
 var CJK_HIGH = 0x9FCC;
 var CJK_RANGE = CJK_HIGH - CJK_LOW + 1;
-log('CJK_RANGE: '+CJK_RANGE);
+
+var src = [0x10, 0x20, 0x30];
+var encd = enc(src, CJK_RANGE);
+log('');
+var decd = dec(encd, CJK_RANGE, src.length);
 
 function uuidtocjk(uuid) {
-  log('enter uuidtocjk');
-  var octets = uuidtoarray(uuid);
-  var cjk = '';
-  var acc = 0; // value accumulator
-  //log('acc: '+acc);
-  var range = 1; // range (max value) of acc
-  //log('range: '+range);
-  var i = 0;
-  while (i < octets.length) {
-    //log('ACCUMULATE');
-    while (range < CJK_RANGE && i < octets.length) {
-      acc = (acc << 8) + octets[i++];
-      //log('acc: '+acc);
-      range = range << 8;
-      //log('range: '+range);
-    }
-    //log('FLUSH');
-    var out = acc % CJK_RANGE;
-    log('out: '+out);
-    cjk += String.fromCharCode(CJK_LOW + out);
-    acc = (acc / CJK_RANGE) << 0;
-    //log('acc: '+acc);
-    range = (range / CJK_RANGE) << 0;
-    //log('range: '+range);
-  }
-  //log('DONE');
-  return cjk;
+  var octets = uuidtooctets(uuid);
+  var cjk = enc(octets, CJK_RANGE);
+  return cjk.map(function(n) { return String.fromCharCode(CJK_LOW + n); }).join('');
 }
 
 function cjktouuid(cjk) {
-  log('enter cjktouuid');
   var codes = cjk.split('').map(function(c) { return c.charCodeAt(0) - CJK_LOW; });
-  var octets = [];
-  var range = 1;
-  var i = 0;
-  while (i < codes.length) {
-    var code = codes[i];
-    log('code: '+code);
-    octets.push(code & 0xff);
-    while (range < CJK_RANGE) {
-      //acc = (acc << 8) + octets[i++];
-      range = range << 8;
-    }
-    //acc = (acc / CJK_RANGE) << 0;
-    range = (range / CJK_RANGE) << 0;
-    break;
-  }
+  var octets = dec(codes, CJK_RANGE);
   return octets.map(function(o) { return o.toString(16); }).join('');
 }
 
-var orig = EASONID;
-var encd = uuidtocjk(orig);
-var decd = cjktouuid(encd);
+/*
+var orig = MAYID;
+var encd = uuidtobase64(orig);
+var decd = base64touuid(encd);
 log(orig);
 log(encd.length + ': '+encd);
 log(decd);
+*/
 
 /*
 for (var c=0; c < 65536; c++) {
