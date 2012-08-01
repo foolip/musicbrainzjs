@@ -128,7 +128,8 @@ var musicbrainz = function() {
       var query = Object.keys(query).map(function(key) {
         var value = query[key];
         if (key == 'title') {
-          key = type;
+          // use no key at all for the title itself
+          return value;
         }
         return key+':"'+value.replace('"', '')+'"';
       }).join(' ');
