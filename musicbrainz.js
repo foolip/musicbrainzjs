@@ -65,7 +65,7 @@ var musicbrainz = function() {
 
     if (isList) {
       // drop the container with its attributes
-      value = value[listName];
+      value = value[listName] || [];
     }
 
     if (name == 'artistCredit') {
